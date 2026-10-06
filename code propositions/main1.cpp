@@ -1,6 +1,6 @@
 // CONFIG
 // Sensor pins, LEFT to RIGHT physically on the robot 
-
+#include <Arduino.h>
 const uint8_t sensorPins[8] = {13, 14, 26, 27, 25, 32, 33, 4};
 
 const uint8_t startButtonPin = 23; //pullup pin, pressed = LOW
