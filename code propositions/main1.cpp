@@ -19,38 +19,35 @@ int baseSpeed    = 150;
 int maxSpeed     = 255;
 int minTurnSpeed = 60;   
 
-// Marker detection threshold 
-const int MARKER_SENSOR_THRESHOLD = 8;
-const int SENSOR_BLACK_THRESHOLD  = 500;  // 0-1000 scale, "is this black?"
 
 
 // INTERNAL VARIABLES
 
-int sensorMin[8], sensorMax[8]; // filled in during calibration
-int sensorValue[8]; // normalized 0 (white) - 1000 (black)
+int sensorThreashold[8];
+int sensorValue[8];
+unsigned long blackMillis = 0; 
+unsigned long whiteMillis = 0;  
+
+int line_position;
+int sensor_sum;
 
 float lastError = 0;
 float integral  = 0;
-int   lastKnownPos = 0;
+float   lastKnownPos = 0;
 
 int blackoutEventCount = 0;
 bool inBlackout = false;
 bool invertedLine = false; // set to true if the line is white on black instead of black on white
 
-const int pwmFreq = 5000; // how many times per second it switches on/off
-const int pwmResBits = 8; // means speed will be expressed as a number from 0 to 255 (2^8 = 256 steps)
-const int pwmChA = 0, pwmChB = 1; // assigned channels to differentiate
 
 // Function Declarations
 void waitForButtonPress();
 void calibrateSensors();
-int readLinePosition();
-int countActiveSensors();
+void followLine();
 void checkBlackoutEvents();
-void simulateValveClose();
 void detectInvertedLine();
 void driveMotor(bool isLeft, int speed);
-
+float readSensor();
 
 void setup() {
   Serial.begin(115200);
@@ -59,16 +56,10 @@ void setup() {
   pinMode(AIN1, OUTPUT); pinMode(AIN2, OUTPUT);
   pinMode(BIN1, OUTPUT); pinMode(BIN2, OUTPUT);
 
-  // PWM works by switching power on/off very fast, the % of time it's "on" controls the effective speed.
-  ledcSetup(pwmChA, pwmFreq, pwmResBits);
-  ledcSetup(pwmChB, pwmFreq, pwmResBits);
-  ledcAttachPin(PWMA, pwmChA);
-  ledcAttachPin(PWMB, pwmChB);
-
   for (uint8_t i = 0; i < 8; i++) pinMode(sensorPins[i], INPUT);
 
   pinMode(startButtonPin, INPUT_PULLUP);
-
+  Serial.println("Press the start button to begin calibration.");
   calibrateSensors();
 
   Serial.println("Calibration done.");
@@ -81,7 +72,7 @@ void setup() {
 }
 void loop() {
   detectInvertedLine();
-  int position = readLinePosition();   // -1000 (far left)  +1000 (far right)
+  int position = readLinePosition(); 
   checkBlackoutEvents(); 
 
   float error = position;
@@ -117,43 +108,32 @@ void waitForButtonPress() {
 /* Reads all 8 sensors, normalizes each to 0-1000, and returns a single
    "where is the line" number: negative = line is to the left, positive =
    line is to the right, 0 = centered. */
-int readLinePosition() {
-  long weightedSum = 0;
-  long total = 0;
-  bool lineSeen = false;
+float readSensor() {
+  sensor_sum=0;
+  line_position=0;
 
-  const int weight[8] = {-1000, -714, -428, -142, 142, 428, 714, 1000};
+  const int weight[8] = {1, 2, 3, 4, 5 ,6 ,7, 8};
 
   for (uint8_t i = 0; i < 8; i++) {
-    int raw = analogRead(sensorPins[i]);
-    int norm = map(raw, sensorMin[i], sensorMax[i], 0, 1000);
-    norm = constrain(norm, 0, 1000);
-    sensorValue[i] = norm;
+    sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i]; // black:1 , white:0
 
-    if (invertedLine) norm = 1000 - norm;
+    if (invertedLine) sensorValue[i]= !sensorValue[i];
 
-    if (norm > SENSOR_BLACK_THRESHOLD) lineSeen = true;
-
-    weightedSum += (long)norm * weight[i];
-    total += norm;
+    line_position += sensorValue[i] * weight[i];
+    sensor_sum += sensorValue[i];
   }
 
-  if (!lineSeen || total==0) {
+  if (sensor_sum==0) {
     return lastKnownPos;
   }
 
-  int pos = weightedSum / total;
+  float pos = line_position / sensor_sum;
   lastKnownPos = pos;
   return pos;
 }
 
-// Counts how many sensors currently see black.
-int countActiveSensors() {
-  int count = 0;
-  for (uint8_t i = 0; i < 8; i++) {
-    if (sensorValue[i] > SENSOR_BLACK_THRESHOLD) count++;
-  }
-  return count;
+void followLine(){
+  
 }
 
 void detectInvertedLine() {
@@ -199,47 +179,45 @@ void checkBlackoutEvents() {
 
 
 void calibrateSensors() {
-  const int SAMPLES = 200;
+  int BSAMPLES = 0;
+  int WSAMPLES = 0;
   long blackSum[8] = {0};
   long whiteSum[8] = {0};
 
   waitForButtonPress();
 
   Serial.println("Sampling BLACK surface...");
-  for (int s = 0; s < SAMPLES; s++) {
+  blackMillis = millis(); 
+  while(millis()-blackMillis < 2000) {
+    BSAMPLES++;
     for (uint8_t i = 0; i < 8; i++) {
       blackSum[i] += analogRead(sensorPins[i]);
     }
     delay(2);
   }
-
+Serial.println("Black sampling done.");
   waitForButtonPress();
 
   Serial.println("Sampling WHITE surface...");
-  for (int s = 0; s < SAMPLES; s++) {
+  whiteMillis = millis();
+  while(millis()-whiteMillis < 2000) {
+    WSAMPLES++;
     for (uint8_t i = 0; i < 8; i++) {
       whiteSum[i] += analogRead(sensorPins[i]);
     }
     delay(2);
   }
+  
+  Serial.println("White sampling done.");
 
   for (uint8_t i = 0; i < 8; i++) {
-    int avgBlack = blackSum[i] / SAMPLES;
-    int avgWhite = whiteSum[i] / SAMPLES;
+    int avgBlack = blackSum[i] / BSAMPLES;
+    int avgWhite = whiteSum[i] / WSAMPLES;
 
-    // Dynamically assign min/max regardless of sensor polarity
-    sensorMin[i] = min(avgBlack, avgWhite);
-    sensorMax[i] = max(avgBlack, avgWhite);
-
-    // Guard against divide-by-zero during mapping
-    if (sensorMax[i] - sensorMin[i] < 100) {
-      sensorMax[i] = sensorMin[i] + 100;
-    }
-
-    int avgThreshold = (avgBlack + avgWhite) / 2;
+    sensorThreashold[i] = (avgBlack + avgWhite) / 2;
 
     Serial.printf("Sensor %d | Black: %4d | White: %4d | Threshold: %4d\n", 
-                  i, avgBlack, avgWhite, avgThreshold);
+                  i, avgBlack, avgWhite, sensorThreashold[i]);
   }
 }
 
@@ -254,11 +232,11 @@ void driveMotor(bool isLeft, int speed) {
   if (isLeft) {
     digitalWrite(AIN1, forward ? HIGH : LOW);
     digitalWrite(AIN2, forward ? LOW  : HIGH);
-    ledcWrite(pwmChA, pwm);
+    analogWrite(PWMA, pwm);
   } else {
     digitalWrite(BIN1, forward ? HIGH : LOW);
     digitalWrite(BIN2, forward ? LOW  : HIGH);
-    ledcWrite(pwmChB, pwm);
+    analogWrite(PWMB, pwm);
   }
 }
 
