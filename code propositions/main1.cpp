@@ -6,7 +6,7 @@ const uint8_t sensorPins[8] = {13, 14, 26, 27, 25, 32, 33, 4};
 const uint8_t startButtonPin = 23; //pullup pin, pressed = LOW
 
 const uint8_t PWMA = 21, AIN1 = 16, AIN2 = 17;  // LEFT motor
-const uint8_t PWMB = 22,  BIN1 = 18, BIN2 = 19;  // RIGHT motor
+const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 
 // PID tuning
 float Kp = 0.045;
@@ -79,8 +79,6 @@ void setup() {
   Serial.println("GO!");
   delay(300);  
 }
-
-
 void loop() {
   detectInvertedLine();
   int position = readLinePosition();   // -1000 (far left)  +1000 (far right)
@@ -176,10 +174,10 @@ void checkBlackoutEvents() {
     blackoutEventCount++;
     Serial.printf("Blackout event #%d\n", blackoutEventCount);
 
-    if (blackoutEventCount <= 2 || (blackoutEventCount >= 4 && blackoutEventCount <= 7)) {
+    if (blackoutEventCount <9) {
       return;  // first two markers are ignored, just drive forward through them
 
-    } else if (blackoutEventCount == 3) {
+    }/* else if (blackoutEventCount == 3) {
       // Drive forward slightly to clear marker
       driveMotor(true, baseSpeed); 
       driveMotor(false, baseSpeed);
@@ -190,7 +188,7 @@ void checkBlackoutEvents() {
       driveMotor(false, 40);   
       delay(280);
 
-    } else if (blackoutEventCount == 9) {
+    }*/ else if (blackoutEventCount == 9) {
       driveMotor(true, 0);
       driveMotor(false, 0);
       Serial.println("Finished.");
@@ -263,4 +261,5 @@ void driveMotor(bool isLeft, int speed) {
     ledcWrite(pwmChB, pwm);
   }
 }
+
 

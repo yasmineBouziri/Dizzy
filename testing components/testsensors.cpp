@@ -5,10 +5,6 @@ const uint8_t startButtonPin = 23;
 int sensorMin[8], sensorMax[8]; // filled in during calibration
 int sensorValue[8];
 
-unsigned long blackMillis = 0; 
-unsigned long whiteMillis = 0;  
-
-
 void calibrateSensors();
 void waitForButtonPress();
 
@@ -36,29 +32,29 @@ void calibrateSensors() {
   waitForButtonPress();
 
   Serial.println("Sampling BLACK surface...");
-  blackMillis = millis(); 
-  while(millis()-blackMillis < 2000) {
+  while(millis() < 2000) {
     BSAMPLES++;
     for (uint8_t i = 0; i < 8; i++) {
       blackSum[i] += analogRead(sensorPins[i]);
     }
-    Serial.println(analogRead(sensorPins[6]));
     delay(2);
   }
 Serial.println("Black sampling done.");
   waitForButtonPress();
 
   Serial.println("Sampling WHITE surface...");
-  whiteMillis = millis();
-  while(millis()-whiteMillis < 2000) {
+  while(millis() < 2000) {
     WSAMPLES++;
     for (uint8_t i = 0; i < 8; i++) {
       whiteSum[i] += analogRead(sensorPins[i]);
     }
-    Serial.println(analogRead(sensorPins[7]));
     delay(2);
   }
-  
+    for (uint8_t i = 0; i < 8; i++) {
+      whiteSum[i] += analogRead(sensorPins[i]);
+    }
+    delay(2);
+  }
   Serial.println("White sampling done.");
 
   for (uint8_t i = 0; i < 8; i++) {
