@@ -17,11 +17,11 @@ const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 int turn_value=0;
 float Kp = 30;
 float PID;
-float Kd = 0;
+float Kd = 30;
 
 // Speed settings
 // baseSpeed is how fast it drives straight (0-255).
-int baseSpeed    = 150;
+int baseSpeed    = 120;
 int maxSpeed     = 255;
 int minTurnSpeed = 60;   
 
@@ -68,17 +68,12 @@ void setup() {
 
   pinMode(startButtonPin, INPUT_PULLUP);
 
-  Serial.println("Press the start button to begin calibration.");
   digitalWrite(led, HIGH);
 
   calibrateSensors();
 
-  Serial.println("Calibration done.");
-  Serial.println("Press the start button to begin driving.");
-
   waitForButtonPress();
 
-  Serial.println("GO!");
   delay(300);  
 }
 
@@ -126,24 +121,24 @@ void followLine(){
     int leftCount  = sensorValue[0] + sensorValue[1] + sensorValue[2];
     int rightCount = sensorValue[5] + sensorValue[6] + sensorValue[7];
 
+    uint8_t followStart = millis();
+
     float error = 4.5 - pos; // center is 4.5
     PID = Kp * error + Kd * (error - lastError);
     lastError = error;
-
-    Serial.printf("Pos: %.2f | Error: %.2f | PID: %.2f | SensorSum: %d\n", pos, error, PID, sensor_sum);  
 
     int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
     int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
     driveMotors(leftSpeed, rightSpeed);
 
     //left turn detec
-    if (sensorValue[0]==1 && sensorValue[7]==0) turn_value=1;
+    if (8 <= leftCount <= 21) turn_value=1;
     //right turn detec
-    if (sensorValue[0]==0 && sensorValue[7]==1) turn_value=2;
+    if (1 <= rightCount <= 6) turn_value=2;
 
     //actually turning left
     if (turn_value==1){
-      delay(100);
+      delay(50);
       driveMotors(-minTurnSpeed, minTurnSpeed);
       while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
       turn_value=0;
@@ -151,7 +146,7 @@ void followLine(){
 
     //actually turnnig right
     else if (turn_value==2){
-      delay(100);
+      delay(50);
       driveMotors(minTurnSpeed, -minTurnSpeed);
       while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
       turn_value=0;
@@ -159,10 +154,9 @@ void followLine(){
 
     //u turn go back to prev pos
     else if (sensor_sum==0 && turn_value==0){
-      delay(100);
-      driveMotors(-minTurnSpeed, minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
+      delay(50);
+      uint8_t backDuration = millis()-followStart;
+      goBack(backDuration, 100, 100)
     }
 
     if (sensor_sum==8){
@@ -174,6 +168,11 @@ void followLine(){
       }
       // sth to add if necessary
     }
+}
+
+void goBack(uint8_t duration, int speedLeft, int speedRight){
+  uint8_t start=millis();
+  while (millis() - start < duration) driveMotors(-speedLeft, -speedRight);
 }
 
 void detectInvertedLine() {
@@ -191,14 +190,12 @@ void checkBlackoutEvents() {
   if (!isBlackout && inBlackout) {
     inBlackout = false;  // just exited, count this as one event
     blackoutEventCount++;
-    Serial.printf("Blackout event #%d\n", blackoutEventCount);
 
     if (blackoutEventCount <9) {
       return;  
 
     } else if (blackoutEventCount == 9) {
       driveMotors(0, 0);
-      Serial.println("Finished.");
       while (true) { delay(1000); }  // stop here permanently
     }
   }
@@ -213,7 +210,6 @@ void calibrateSensors() {
 
   waitForButtonPress();
 
-  Serial.println("Sampling BLACK surface...");
   blackMillis = millis(); 
   while(millis()-blackMillis < 2000) {
     BSAMPLES++;
@@ -226,10 +222,8 @@ void calibrateSensors() {
     }
     delay(2);
   }
-  Serial.println("Black sampling done.");
   waitForButtonPress();
 
-  Serial.println("Sampling WHITE surface...");
   whiteMillis = millis();
   while(millis()-whiteMillis < 2000) {
     WSAMPLES++;
@@ -243,16 +237,12 @@ void calibrateSensors() {
     delay(2);
   }
   
-  Serial.println("White sampling done.");
 
   for (uint8_t i = 0; i < 8; i++) {
     int avgBlack = blackSum[i] / BSAMPLES;
     int avgWhite = whiteSum[i] / WSAMPLES;
 
     sensorThreashold[i] = (avgBlack + avgWhite) / 2;
-
-    Serial.printf("Sensor %d | Black: %4d | White: %4d | Threshold: %4d\n", 
-                  i, avgBlack, avgWhite, sensorThreashold[i]);
   }
 }
 
