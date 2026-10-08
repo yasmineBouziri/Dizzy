@@ -15,7 +15,7 @@ const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 // PID tuning
 
 int turn_value=0;
-float Kp = 0.2;
+float Kp = 30;
 float PID;
 float Kd = 0;
 
@@ -39,11 +39,7 @@ int sensor_sum;
 
 float lastError = 0;
 float lastKnownPos = 4.5;// default to center if the line is ever fully lost
-float pos;
-
-int whiteStreak = 0;   // consecutive loops NOT seeing marker zone
-int blackStreak = 0;   // consecutive loops seeing marker zone
-int gapStreak   = 0;   // consecutive loops seeing the finish-gap pattern
+float pos= 4.5; 
 
 int blackoutEventCount = 0;
 bool inBlackout = false;
@@ -126,6 +122,10 @@ void readSensor() {
 
 void followLine(){
     readSensor();
+    
+    int leftCount  = sensorValue[0] + sensorValue[1] + sensorValue[2];
+    int rightCount = sensorValue[5] + sensorValue[6] + sensorValue[7];
+
     float error = 4.5 - pos; // center is 4.5
     PID = Kp * error + Kd * (error - lastError);
     lastError = error;
@@ -137,13 +137,13 @@ void followLine(){
     driveMotors(leftSpeed, rightSpeed);
 
     //left turn detec
-    if (sensorValue[0]==1 && sensorValue[8]==0) turn_value=1;
+    if (sensorValue[0]==1 && sensorValue[7]==0) turn_value=1;
     //right turn detec
-    if (sensorValue[0]==0 && sensorValue[8]==1) turn_value=2;
+    if (sensorValue[0]==0 && sensorValue[7]==1) turn_value=2;
 
     //actually turning left
     if (turn_value==1){
-      delay(10);
+      delay(100);
       driveMotors(-minTurnSpeed, minTurnSpeed);
       while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
       turn_value=0;
@@ -151,7 +151,7 @@ void followLine(){
 
     //actually turnnig right
     else if (turn_value==2){
-      delay(10);
+      delay(100);
       driveMotors(minTurnSpeed, -minTurnSpeed);
       while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
       turn_value=0;
@@ -159,14 +159,14 @@ void followLine(){
 
     //u turn go back to prev pos
     else if (sensor_sum==0 && turn_value==0){
-      delay(50);
+      delay(100);
       driveMotors(-minTurnSpeed, minTurnSpeed);
       while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
       turn_value=0;
     }
 
     if (sensor_sum==8){
-      delay(30); // inertia can keep you going it's a temporary blackout
+      delay(500); // inertia can keep you going it's a temporary blackout
       readSensor();
       if (sensor_sum==8){
         driveMotors(0,0);
