@@ -1,16 +1,22 @@
-// CONFIG
-// Sensor pins, LEFT to RIGHT physically on the robot 
 #include <Arduino.h>
+
+// CONFIG
+
+// Sensor pins, LEFT to RIGHT physically on the robot 
 const uint8_t sensorPins[8] = {13, 14, 26, 27, 25, 32, 33, 4};
 
 const uint8_t startButtonPin = 23; //pullup pin, pressed = LOW
+
+const uint8_t led = 2;
 
 const uint8_t PWMA = 21, AIN1 = 16, AIN2 = 17;  // LEFT motor
 const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 
 // PID tuning
+
+int turn_value=0;
 float Kp = 0.045;
-float Ki = 0.0;
+float PID;
 float Kd = 0.25;
 
 // Speed settings
@@ -25,15 +31,19 @@ int minTurnSpeed = 60;
 
 int sensorThreashold[8];
 int sensorValue[8];
-unsigned long blackMillis = 0; 
-unsigned long whiteMillis = 0;  
+unsigned long blackMillis; 
+unsigned long whiteMillis;  
 
 int line_position;
 int sensor_sum;
 
 float lastError = 0;
-float integral  = 0;
-float   lastKnownPos = 0;
+float lastKnownPos = 4.5;// default to center if the line is ever fully lost
+float pos;
+
+int whiteStreak = 0;   // consecutive loops NOT seeing marker zone
+int blackStreak = 0;   // consecutive loops seeing marker zone
+int gapStreak   = 0;   // consecutive loops seeing the finish-gap pattern
 
 int blackoutEventCount = 0;
 bool inBlackout = false;
@@ -46,8 +56,8 @@ void calibrateSensors();
 void followLine();
 void checkBlackoutEvents();
 void detectInvertedLine();
-void driveMotor(bool isLeft, int speed);
-float readSensor();
+void driveMotors(int leftSpeed, int rightSpeed);
+void readSensor();
 
 void setup() {
   Serial.begin(115200);
@@ -58,8 +68,12 @@ void setup() {
 
   for (uint8_t i = 0; i < 8; i++) pinMode(sensorPins[i], INPUT);
 
+  pinMode(led, OUTPUT);
+
   pinMode(startButtonPin, INPUT_PULLUP);
+
   Serial.println("Press the start button to begin calibration.");
+
   calibrateSensors();
 
   Serial.println("Calibration done.");
@@ -70,29 +84,12 @@ void setup() {
   Serial.println("GO!");
   delay(300);  
 }
+
+
 void loop() {
   detectInvertedLine();
-  int position = readLinePosition(); 
-  checkBlackoutEvents(); 
+  followLine();
 
-  float error = position;
-  integral += error;
-  integral = constrain(integral, -2000, 2000);  // stop it building up forever
-  float derivative = error - lastError;
-  lastError = error;
-
-  float correction = Kp * error + Ki * integral + Kd * derivative;
-
-  int leftSpeed  = baseSpeed - correction;
-  int rightSpeed = baseSpeed + correction;
-  leftSpeed  = constrain(leftSpeed, -maxSpeed, maxSpeed);
-  rightSpeed = constrain(rightSpeed, -maxSpeed, maxSpeed);
-
-  driveMotor(true,  leftSpeed);
-  driveMotor(false, rightSpeed);
-
-  // Uncomment this line while tuning to see live sensor + position data:
-  // printDebug(position, correction);
 }
 
 
@@ -105,10 +102,8 @@ void waitForButtonPress() {
   delay(200);                                                 
 }
 
-/* Reads all 8 sensors, normalizes each to 0-1000, and returns a single
-   "where is the line" number: negative = line is to the left, positive =
-   line is to the right, 0 = centered. */
-float readSensor() {
+// Reads the line position from the sensors.
+void readSensor() {
   sensor_sum=0;
   line_position=0;
 
@@ -122,28 +117,69 @@ float readSensor() {
     line_position += sensorValue[i] * weight[i];
     sensor_sum += sensorValue[i];
   }
-
-  if (sensor_sum==0) {
-    return lastKnownPos;
+  if (sensor_sum){
+    pos = (float) line_position / sensor_sum;
+    lastKnownPos = pos;
   }
-
-  float pos = line_position / sensor_sum;
-  lastKnownPos = pos;
-  return pos;
 }
 
 void followLine(){
-  
+    readSensor();
+    float error = 4.5 - pos; // center is 4.5
+    PID = Kp * error + Kd * (error - lastError);
+    lastError = error;
+
+    int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
+    int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
+    driveMotors(leftSpeed, rightSpeed);
+
+    //left turn detec
+    if (sensorValue[0]==1 && sensorValue[8]==0) turn_value=1;
+    //right turn detec
+    if (sensorValue[0]==0 && sensorValue[8]==1) turn_value=2;
+
+    //actually turning left
+    if (turn_value==1){
+      delay(10);
+      driveMotors(-minTurnSpeed, minTurnSpeed);
+      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
+      turn_value=0;
+    }
+
+    //actually turnnig right
+    else if (turn_value==2){
+      delay(10);
+      driveMotors(minTurnSpeed, -minTurnSpeed);
+      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
+      turn_value=0;
+    }
+
+    //u turn go back to prev pos
+    else if (sensor_sum==0 && turn_value==0){
+      delay(50);
+      driveMotors(-minTurnSpeed, minTurnSpeed);
+      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
+      turn_value=0;
+    }
+
+    if (sensor_sum==8){
+      delay(30); // inertia can keep you going it's a temporary blackout
+      readSensor();
+      if (sensor_sum==8){
+        driveMotors(0,0);
+        while (sensor_sum==8) readSensor();
+      }
+      // sth to add if necessary
+    }
 }
 
 void detectInvertedLine() {
-  if (sensorValue[0]>=SENSOR_BLACK_THRESHOLD && sensorValue[1]>=SENSOR_BLACK_THRESHOLD && sensorValue[2]>=SENSOR_BLACK_THRESHOLD && sensorValue[3]<SENSOR_BLACK_THRESHOLD && sensorValue[4]<SENSOR_BLACK_THRESHOLD && sensorValue[5]>=SENSOR_BLACK_THRESHOLD && sensorValue[6]>=SENSOR_BLACK_THRESHOLD && sensorValue[7]>=SENSOR_BLACK_THRESHOLD) invertedLine = true; 
-  if (sensorValue[0]<SENSOR_BLACK_THRESHOLD && sensorValue[1]<SENSOR_BLACK_THRESHOLD && sensorValue[2]<SENSOR_BLACK_THRESHOLD && sensorValue[3]>=SENSOR_BLACK_THRESHOLD && sensorValue[4]>=SENSOR_BLACK_THRESHOLD && sensorValue[5]<SENSOR_BLACK_THRESHOLD && sensorValue[6]<SENSOR_BLACK_THRESHOLD && sensorValue[7]<SENSOR_BLACK_THRESHOLD) invertedLine = false;
+  if (sensorValue[0] && sensorValue[1] && sensorValue[2] && !sensorValue[3] && !sensorValue[4] && sensorValue[5] && sensorValue[6] && sensorValue[7]) invertedLine = !invertedLine; 
 }
 
 // Detects entering/leaving a "wide black zone" (marker) and reacts based on which one this is in sequence.
 void checkBlackoutEvents() {
-  bool isBlackout = (countActiveSensors() >= MARKER_SENSOR_THRESHOLD);
+  bool isBlackout = (sensor_sum == 8);  // 8 sensors see black = wide black zone
 
   if (isBlackout && !inBlackout) {
     inBlackout = true;  // just entered a wide black zone
@@ -155,22 +191,10 @@ void checkBlackoutEvents() {
     Serial.printf("Blackout event #%d\n", blackoutEventCount);
 
     if (blackoutEventCount <9) {
-      return;  // first two markers are ignored, just drive forward through them
+      return;  
 
-    }/* else if (blackoutEventCount == 3) {
-      // Drive forward slightly to clear marker
-      driveMotor(true, baseSpeed); 
-      driveMotor(false, baseSpeed);
-      delay(100);
-
-      // Nudge hard right onto the right branch of the circle
-      driveMotor(true, 170);   
-      driveMotor(false, 40);   
-      delay(280);
-
-    }*/ else if (blackoutEventCount == 9) {
-      driveMotor(true, 0);
-      driveMotor(false, 0);
+    } else if (blackoutEventCount == 9) {
+      driveMotors(0, 0);
       Serial.println("Finished.");
       while (true) { delay(1000); }  // stop here permanently
     }
@@ -190,18 +214,26 @@ void calibrateSensors() {
   blackMillis = millis(); 
   while(millis()-blackMillis < 2000) {
     BSAMPLES++;
+    digitalWrite(led, LOW);
+    delay(100);
+    digitalWrite(led, HIGH);
+    delay(100);
     for (uint8_t i = 0; i < 8; i++) {
       blackSum[i] += analogRead(sensorPins[i]);
     }
     delay(2);
   }
-Serial.println("Black sampling done.");
+  Serial.println("Black sampling done.");
   waitForButtonPress();
 
   Serial.println("Sampling WHITE surface...");
   whiteMillis = millis();
   while(millis()-whiteMillis < 2000) {
     WSAMPLES++;
+    digitalWrite(led, LOW);
+    delay(100);
+    digitalWrite(led, HIGH);
+    delay(100);
     for (uint8_t i = 0; i < 8; i++) {
       whiteSum[i] += analogRead(sensorPins[i]);
     }
@@ -221,23 +253,23 @@ Serial.println("Black sampling done.");
   }
 }
 
-// Sends a speed command to one motor.
-// isLeft: true = left motor, false = right motor.
-// speed: -255 to 255. Positive = forward, negative = reverse.
-void driveMotor(bool isLeft, int speed) {
-  bool forward = speed >= 0;
-  int pwm = constrain(abs(speed), 0, 255);
-  if (pwm > 0 && pwm < minTurnSpeed) pwm = minTurnSpeed;
+// Sends a speed command to motors.
+void driveMotors(int speedLeft, int speedRight) {
+  bool forwardLeft = speedLeft >= 0;
+  bool forwardRight = speedRight >= 0;
+  int pwmLeft = constrain(abs(speedLeft), 0, 255);
+  int pwmRight = constrain(abs(speedRight), 0, 255);
 
-  if (isLeft) {
-    digitalWrite(AIN1, forward ? HIGH : LOW);
-    digitalWrite(AIN2, forward ? LOW  : HIGH);
-    analogWrite(PWMA, pwm);
-  } else {
-    digitalWrite(BIN1, forward ? HIGH : LOW);
-    digitalWrite(BIN2, forward ? LOW  : HIGH);
-    analogWrite(PWMB, pwm);
-  }
+  if (pwmLeft > 0 && pwmLeft < minTurnSpeed) pwmLeft = minTurnSpeed;
+  if (pwmRight > 0 && pwmRight < minTurnSpeed) pwmRight = minTurnSpeed;
+
+  digitalWrite(AIN1, forwardLeft ? HIGH : LOW);
+  digitalWrite(AIN2, forwardLeft ? LOW : HIGH);
+  analogWrite(PWMA, pwmLeft);
+
+  digitalWrite(BIN1, forwardRight ? HIGH : LOW);
+  digitalWrite(BIN2, forwardRight ? LOW : HIGH);
+  analogWrite(PWMB, pwmRight);
 }
 
 
