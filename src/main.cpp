@@ -181,13 +181,32 @@ void goBack(unsigned long duration, int speedLeft, int speedRight){
 }
 
 void line(){
+  readSensor();
   if(justStarted){
     driveMotors(180,180);
     delay(500);
     driveMotors(0,0);
     justStarted = false;
+  }else{
+    if(sensor_sum>4){
+      driveMotors(0,0);
+    }else{
+      drivePID();
+    }
   }
 
+}
+
+void drivePID(){
+  float kpp = 4.0;
+  float weight[8] = {-4, -3, -2, -1, 1 ,2 ,3, 4};
+
+  float error_ = 0;
+  for(int i = 0; i < 8; i++){
+    error_ += sensorValue[i]*weight[i];
+  }
+  float corr = kpp*error_;
+  driveMotors(baseSpeed + corr, baseSpeed-corr);
 }
 
 void detectInvertedLine() {
