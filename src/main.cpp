@@ -117,13 +117,14 @@ void followLine(){
   readSensor();
   if(justStarted){
     driveMotors(baseSpeed,baseSpeed);
-    delay(300);
+    delay(600);
     driveMotors(0,0);
     justStarted = false;
   }else{
     if(sensor_sum>4){ // detecting the circle??
       driveMotors(-minTurnSpeed,80);
-      delay(100);
+      digitalWrite(led, LOW);
+      delay(20000);
 
     }else{
       drivePID();
