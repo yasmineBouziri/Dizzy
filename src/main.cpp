@@ -21,9 +21,9 @@ float Kd = 30;
 
 // Speed settings
 // baseSpeed is how fast it drives straight (0-255).
-int baseSpeed    = 120;
+int baseSpeed    = 100;
 int maxSpeed     = 255;
-int minTurnSpeed = 60;   
+int minTurnSpeed = 50;   
 
 unsigned long lastLineSeen = millis();
 
@@ -45,6 +45,12 @@ int blackoutEventCount = 0;
 bool inBlackout = false;
 bool invertedLine = false; // set to true if the line is white on black instead of black on white
 bool justStarted;
+bool Ti1 = false;
+bool CIRCLE = false;
+bool Ti2 = false;
+bool TEAR = false;
+bool C1 = false;
+bool C2 = false;
 
 // Function Declarations
 void waitForButtonPress();
@@ -117,15 +123,23 @@ void followLine(){
   readSensor();
   if(justStarted){
     driveMotors(baseSpeed,baseSpeed);
-    delay(600);
+    delay(400);
     driveMotors(0,0);
     justStarted = false;
   }else{
-    if(sensor_sum>4){ // detecting the circle??
-      driveMotors(-minTurnSpeed,80);
+    if(sensor_sum>4 && !Ti1){ // detecting the first T
+      driveMotors(baseSpeed,baseSpeed);
       digitalWrite(led, LOW);
-      delay(20000);
+      delay(200);
+      while(1){ driveMotors(0,0);}
+      Ti1 = true;
+      
 
+    }else if(sensor_sum>4 && Ti1 && !CIRCLE){ // detecting the circle
+      driveMotors(-minTurnSpeed,minTurnSpeed);
+      digitalWrite(led, HIGH);
+      delay(400);
+      CIRCLE = true;
     }else{
       drivePID();
     }
