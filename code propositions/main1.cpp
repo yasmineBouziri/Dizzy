@@ -129,6 +129,8 @@ void followLine(){
     PID = Kp * error + Kd * (error - lastError);
     lastError = error;
 
+    Serial.printf("Pos: %.2f | Error: %.2f | PID: %.2f | SensorSum: %d\n", pos, error, PID, sensor_sum);  
+
     int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
     int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
     driveMotors(leftSpeed, rightSpeed);
