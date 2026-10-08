@@ -54,7 +54,6 @@ void checkBlackoutEvents();
 void detectInvertedLine();
 void driveMotors(int leftSpeed, int rightSpeed);
 void readSensor();
-void line();
 void drivePID();
 
 void setup() {
@@ -83,8 +82,7 @@ void setup() {
 
 void loop() {
   //detectInvertedLine();
-  //followLine();
-  line();
+  followLine();
 }
 
 
@@ -100,114 +98,41 @@ void waitForButtonPress() {
 // Reads the line position from the sensors.
 void readSensor() {
   sensor_sum=0;
-  line_position=0;
 
-  const int weight[8] = {1, 2, 3, 4, 5 ,6 ,7, 8};
+  const int weight[8] = {-4, -3, -2, -1, 1 ,2 ,3, 4};
 
   for (uint8_t i = 0; i < 8; i++) {
     sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i]; // black:1 , white:0
 
     //if (invertedLine) sensorValue[i]= !sensorValue[i];
 
-    line_position += sensorValue[i] * weight[i];
+    pos += sensorValue[i] * weight[i];
     sensor_sum += sensorValue[i];
   }
-  if (sensor_sum){
-    pos = (float) line_position / sensor_sum;
-    lastKnownPos = pos;
-  }
+
 }
 
 void followLine(){
-    readSensor();
-    if (sensor_sum > 0) lastLineSeen=millis();
-    
-    int leftCountWeighted  = sensorValue[0] + sensorValue[1]*2 + sensorValue[2]*3;
-    int rightCountWeighted = sensorValue[5]*6 + sensorValue[6]*7 + sensorValue[7]*8;
 
-
-    float error = 4.5 - pos; // center is 4.5
-    PID = Kp * error + Kd * (error - lastError);
-    lastError = error;
-
-    int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
-    int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
-    
-    //left turn detec
-    if ((1 <= leftCountWeighted) && (leftCount<= 6)) turn_value=1;
-    //right turn detec
-    else if ((8<= rightCountWeighted) && (rightCount <=21)) turn_value=2;
-
-    //actually turning left
-    if (turn_value==1){
-      delay(50);
-      driveMotors(-minTurnSpeed, minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
-    }
-
-    //actually turnnig right
-    else if (turn_value==2){
-      delay(50);
-      driveMotors(minTurnSpeed, -minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
-    }
-
-    //u turn go back to prev pos
-    else if (sensor_sum==0 && turn_value==0){
-      delay(50);
-      goBack(millis()-lastLineSeen, 100, 100);
-    }
-    
-    if (sensor_sum==8){
-      delay(500); // inertia can keep you going it's a temporary blackout
-      blackoutEventCount++;
-      readSensor();
-      if (sensor_sum==8 && (blackoutEventCount>=9)){
-        driveMotors(0,0);
-        while (sensor_sum==8) readSensor();
-      }
-      // sth to add if necessary
-    }
-    driveMotors(leftSpeed, rightSpeed);
-}
-
-void goBack(unsigned long duration, int speedLeft, int speedRight){
-  unsigned long start=millis();
-  while (millis() - start < duration){
-    driveMotors(-speedLeft, -speedRight);
-    readSensor();
-    if (sensor_sum > 0) return;
-  } 
-}
-
-void line(){
   readSensor();
   if(justStarted){
-    driveMotors(180,180);
-    delay(500);
+    driveMotors(baseSpeed,baseSpeed);
+    delay(300);
     driveMotors(0,0);
     justStarted = false;
   }else{
-    if(sensor_sum>4){
-      driveMotors(0,0);
+    if(sensor_sum>4){ // detecting the circle??
+      driveMotors(-minTurnSpeed,80);
+      delay(100);
+
     }else{
       drivePID();
     }
   }
-
 }
 
 void drivePID(){
-  float kpp = 4.0;
-  float weight[8] = {-4, -3, -2, -1, 1 ,2 ,3, 4};
-
-  float error_ = 0;
-  for(int i = 0; i < 8; i++){
-    error_ += sensorValue[i]*weight[i];
-  }
-  float corr = kpp*error_;
+  float corr = Kp*pos;
   driveMotors(baseSpeed + corr, baseSpeed-corr);
 }
 
