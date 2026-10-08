@@ -25,7 +25,7 @@ int baseSpeed    = 120;
 int maxSpeed     = 255;
 int minTurnSpeed = 60;   
 
-
+unsigned long lastLineSeen = millis();
 
 // INTERNAL VARIABLES
 
@@ -117,11 +117,11 @@ void readSensor() {
 
 void followLine(){
     readSensor();
+    if (sensor_sum > 0) lastLineSeen=millis();
     
-    int leftCount  = sensorValue[0] + sensorValue[1] + sensorValue[2];
-    int rightCount = sensorValue[5] + sensorValue[6] + sensorValue[7];
+    int leftCountWeighted  = sensorValue[0] + sensorValue[1]*2 + sensorValue[2]*3;
+    int rightCountWeighted = sensorValue[5]*6 + sensorValue[6]*7 + sensorValue[7]*8;
 
-    uint8_t followStart = millis();
 
     float error = 4.5 - pos; // center is 4.5
     PID = Kp * error + Kd * (error - lastError);
@@ -132,9 +132,9 @@ void followLine(){
     driveMotors(leftSpeed, rightSpeed);
 
     //left turn detec
-    if (8 <= leftCount <= 21) turn_value=1;
+    if ((1 <= leftCountWeighted) && (leftCount<= 6)) turn_value=1;
     //right turn detec
-    if (1 <= rightCount <= 6) turn_value=2;
+    else if ((8<= rightCountWeighted) && (rightCount <=21)) turn_value=2;
 
     //actually turning left
     if (turn_value==1){
@@ -155,14 +155,14 @@ void followLine(){
     //u turn go back to prev pos
     else if (sensor_sum==0 && turn_value==0){
       delay(50);
-      uint8_t backDuration = millis()-followStart;
-      goBack(backDuration, 100, 100)
+      goBack(millis()-lastLineSeen, 100, 100);
     }
 
     if (sensor_sum==8){
       delay(500); // inertia can keep you going it's a temporary blackout
+      blackoutEventCount++;
       readSensor();
-      if (sensor_sum==8){
+      if (sensor_sum==8 && (blackoutEventCount>=9)){
         driveMotors(0,0);
         while (sensor_sum==8) readSensor();
       }
@@ -170,9 +170,13 @@ void followLine(){
     }
 }
 
-void goBack(uint8_t duration, int speedLeft, int speedRight){
-  uint8_t start=millis();
-  while (millis() - start < duration) driveMotors(-speedLeft, -speedRight);
+void goBack(unsigned long duration, int speedLeft, int speedRight){
+  unsigned long start=millis();
+  while (millis() - start < duration){
+    driveMotors(-speedLeft, -speedRight);
+    readSensor();
+    if (sensor_sum > 0) return;
+  } 
 }
 
 void detectInvertedLine() {
