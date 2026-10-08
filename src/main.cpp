@@ -44,7 +44,7 @@ float pos= 4.5;
 int blackoutEventCount = 0;
 bool inBlackout = false;
 bool invertedLine = false; // set to true if the line is white on black instead of black on white
-
+bool justStarted;
 
 // Function Declarations
 void waitForButtonPress();
@@ -75,13 +75,14 @@ void setup() {
   waitForButtonPress();
 
   delay(300);  
+  justStarted = true;
 }
 
 
 void loop() {
   //detectInvertedLine();
-  followLine();
-
+  //followLine();
+  line();
 }
 
 
@@ -104,7 +105,7 @@ void readSensor() {
   for (uint8_t i = 0; i < 8; i++) {
     sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i]; // black:1 , white:0
 
-    if (invertedLine) sensorValue[i]= !sensorValue[i];
+    //if (invertedLine) sensorValue[i]= !sensorValue[i];
 
     line_position += sensorValue[i] * weight[i];
     sensor_sum += sensorValue[i];
@@ -129,8 +130,7 @@ void followLine(){
 
     int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
     int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
-    driveMotors(leftSpeed, rightSpeed);
-
+    
     //left turn detec
     if ((1 <= leftCountWeighted) && (leftCount<= 6)) turn_value=1;
     //right turn detec
@@ -157,7 +157,7 @@ void followLine(){
       delay(50);
       goBack(millis()-lastLineSeen, 100, 100);
     }
-
+    
     if (sensor_sum==8){
       delay(500); // inertia can keep you going it's a temporary blackout
       blackoutEventCount++;
@@ -168,6 +168,7 @@ void followLine(){
       }
       // sth to add if necessary
     }
+    driveMotors(leftSpeed, rightSpeed);
 }
 
 void goBack(unsigned long duration, int speedLeft, int speedRight){
@@ -177,6 +178,16 @@ void goBack(unsigned long duration, int speedLeft, int speedRight){
     readSensor();
     if (sensor_sum > 0) return;
   } 
+}
+
+void line(){
+  if(justStarted){
+    driveMotors(180,180);
+    delay(500);
+    driveMotors(0,0);
+    justStarted = false;
+  }
+
 }
 
 void detectInvertedLine() {
