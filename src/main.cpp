@@ -54,6 +54,8 @@ void checkBlackoutEvents();
 void detectInvertedLine();
 void driveMotors(int leftSpeed, int rightSpeed);
 void readSensor();
+void line();
+void drivePID();
 
 void setup() {
   Serial.begin(115200);
