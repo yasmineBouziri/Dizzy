@@ -15,9 +15,9 @@ const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 // PID tuning
 
 int turn_value=0;
-float Kp = 30;
+float Kp =15;
 float PID;
-float Kd = 30;
+float Kd = 1;
 
 // Speed settings
 // baseSpeed is how fast it drives straight (0-255).
@@ -38,8 +38,8 @@ int line_position;
 int sensor_sum;
 
 float lastError = 0;
-float lastKnownPos = 4.5;// default to center if the line is ever fully lost
-float pos= 4.5; 
+float lastKnownPos = 0;// default to center if the line is ever fully lost
+float pos=0; 
 
 int blackoutEventCount = 0;
 bool inBlackout = false;
@@ -89,6 +89,7 @@ void setup() {
 void loop() {
   //detectInvertedLine();
   followLine();
+  
 }
 
 
@@ -103,19 +104,22 @@ void waitForButtonPress() {
 
 // Reads the line position from the sensors.
 void readSensor() {
-  sensor_sum=0;
-
-  const int weight[8] = {-4, -3, -2, -1, 1 ,2 ,3, 4};
+  sensor_sum = 0;
+  int weighted = 0;
+  const int weight[8] = {-4, -3, -2, -1, 1, 2, 3, 4};
 
   for (uint8_t i = 0; i < 8; i++) {
-    sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i]; // black:1 , white:0
-
-    //if (invertedLine) sensorValue[i]= !sensorValue[i];
-
-    pos += sensorValue[i] * weight[i];
+    sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i];
+    weighted   += sensorValue[i] * weight[i];
     sensor_sum += sensorValue[i];
   }
 
+  if (sensor_sum > 0) {
+    pos = (float)weighted / sensor_sum;
+    lastKnownPos = pos;
+  } else {
+    pos = lastKnownPos;   // line lost, keep last known position
+  }
 }
 
 void followLine(){
@@ -125,10 +129,11 @@ void followLine(){
     driveMotors(baseSpeed,baseSpeed);
     delay(400);
     driveMotors(0,0);
+    delay(3000);
     justStarted = false;
-  }else{
+  }/*else{
     if(sensor_sum>4 && !Ti1){ // detecting the first T
-      driveMotors(baseSpeed,baseSpeed);
+      driveMotors(60,60);
       digitalWrite(led, LOW);
       delay(200);
       while(1){ driveMotors(0,0);}
@@ -140,15 +145,20 @@ void followLine(){
       digitalWrite(led, HIGH);
       delay(400);
       CIRCLE = true;
-    }else{
+      driveMotors(0,0);
+      delay(1000);
+    }*/else{
       drivePID();
     }
-  }
+    
+  
 }
 
 void drivePID(){
-  float corr = Kp*pos;
-  driveMotors(baseSpeed + corr, baseSpeed-corr);
+  float error = pos;
+  float corr = Kp * error + Kd * (error - lastError);
+  lastError = error;
+  driveMotors(baseSpeed + corr, baseSpeed - corr);
 }
 
 void detectInvertedLine() {
