@@ -91,7 +91,9 @@ void setup() {
 
 void loop() {
   //detectInvertedLine();
-  followLine();
+  //followLine();
+  readSensor();
+  drivePID();
 }
 
 
@@ -144,8 +146,6 @@ void followLine(){
       driveMotors(-minTurnSpeed,minTurnSpeed);
       digitalWrite(led, HIGH);
       delay(400);
-      driveMotors(minTurnSpeed,minTurnSpeed);
-      delay(200);
       CIRCLE = true;
       driveMotors(0,0);
       delay(1000);
