@@ -48,7 +48,8 @@ bool inBlackout = false;
 bool invertedLine = false; // set to true if the line is white on black instead of black on white
 bool justStarted;
 bool Ti1 = false;
-bool CIRCLE = false;
+bool CIRCLE1 = false;
+bool CIRCLE2 = false;
 bool Ti2 = false;
 bool TEAR = false;
 bool C1 = false;
@@ -136,20 +137,23 @@ void followLine(){
     if(sensor_sum>4 && !Ti1){ // detecting the first T
       driveMotors(baseSpeed,baseSpeed);
       digitalWrite(led, LOW);
-      delay(200);
+      delay(150);
       driveMotors(0,0);
-      delay(1000);
       Ti1 = true;
-    }else if(sensor_sum>4 && Ti1 && !CIRCLE){ // detecting the circle
+    }else if(sensor_sum>4 && Ti1 && !CIRCLE1){ // detecting the circle entrance
       driveMotors(-minTurnSpeed,minTurnSpeed);
       digitalWrite(led, HIGH);
-      delay(400);
-      driveMotors(minTurnSpeed,minTurnSpeed);
-      delay(200);
-      CIRCLE = true;
+      delay(300);
       driveMotors(0,0);
       delay(1000);
-      CIRCLE = true;
+      CIRCLE1 = true;
+    }else if(sensor_sum>4 && CIRCLE1 && !CIRCLE2){ 
+      digitalWrite(led, LOW);// detecting the circle exit
+      driveMotors(-minTurnSpeed,minTurnSpeed);
+      delay(300);
+      driveMotors(0,0);
+      delay(1000);
+      CIRCLE2 = true;
     }else{
       drivePID();
     } 
