@@ -171,14 +171,14 @@ void followLine(){
     }
     else if (sensor_sum>4 && Ti2 && !TEARenter){ // detecting the tear
       digitalWrite(led, LOW);
-      Kp=17;
-      drivePID();
+      stopMotors();
+      delay(500);
       TEARenter = true;
     }
     else if (sensor_sum>4 && TEARenter && !TEARleave){ // detecting the tear leave
       digitalWrite(led, HIGH);
-      Kp=25;
-      drivePID();
+      stopMotors();
+      delay(500);
       TEARleave = true;
     }
     else{
