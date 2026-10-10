@@ -11,21 +11,23 @@ const uint8_t led = 2;
 
 const uint8_t PWMA = 21, AIN1 = 16, AIN2 = 17;  // LEFT motor
 const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
+//const uint8_t PWMA = 22, AIN1 = 19, AIN2 = 18;  // LEFT motor
+//const uint8_t PWMB = 21,  BIN1 = 16, BIN2 = 17;  // RIGHT motor
 
 // PID tuning
 
 int turn_value=0;
-float Kp = 0.045;
+float Kp =17;
 float PID;
-float Kd = 0.25;
+float Kd = 0;//1;
 
 // Speed settings
 // baseSpeed is how fast it drives straight (0-255).
-int baseSpeed    = 150;
+int baseSpeed    = 100;
 int maxSpeed     = 255;
 int minTurnSpeed = 60;   
 
-
+unsigned long lastLineSeen = millis();
 
 // INTERNAL VARIABLES
 
@@ -38,17 +40,19 @@ int line_position;
 int sensor_sum;
 
 float lastError = 0;
-float lastKnownPos = 4.5;// default to center if the line is ever fully lost
-float pos;
-
-int whiteStreak = 0;   // consecutive loops NOT seeing marker zone
-int blackStreak = 0;   // consecutive loops seeing marker zone
-int gapStreak   = 0;   // consecutive loops seeing the finish-gap pattern
+float lastKnownPos = 0;// default to center if the line is ever fully lost
+float pos=0; 
 
 int blackoutEventCount = 0;
 bool inBlackout = false;
 bool invertedLine = false; // set to true if the line is white on black instead of black on white
-
+bool justStarted;
+bool Ti1 = false;
+bool CIRCLE = false;
+bool Ti2 = false;
+bool TEAR = false;
+bool C1 = false;
+bool C2 = false;
 
 // Function Declarations
 void waitForButtonPress();
@@ -58,6 +62,7 @@ void checkBlackoutEvents();
 void detectInvertedLine();
 void driveMotors(int leftSpeed, int rightSpeed);
 void readSensor();
+void drivePID();
 
 void setup() {
   Serial.begin(115200);
@@ -72,24 +77,21 @@ void setup() {
 
   pinMode(startButtonPin, INPUT_PULLUP);
 
-  Serial.println("Press the start button to begin calibration.");
+  digitalWrite(led, HIGH);
+
 
   calibrateSensors();
 
-  Serial.println("Calibration done.");
-  Serial.println("Press the start button to begin driving.");
-
   waitForButtonPress();
 
-  Serial.println("GO!");
   delay(300);  
+  justStarted = true;
 }
 
 
 void loop() {
-  detectInvertedLine();
+  //detectInvertedLine();
   followLine();
-
 }
 
 
@@ -104,75 +106,58 @@ void waitForButtonPress() {
 
 // Reads the line position from the sensors.
 void readSensor() {
-  sensor_sum=0;
-  line_position=0;
-
-  const int weight[8] = {1, 2, 3, 4, 5 ,6 ,7, 8};
+  sensor_sum = 0;
+  int weighted = 0;
+  const int weight[8] = {-4, -3, -2, -1, 1, 2, 3, 4};
 
   for (uint8_t i = 0; i < 8; i++) {
-    sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i]; // black:1 , white:0
-
-    if (invertedLine) sensorValue[i]= !sensorValue[i];
-
-    line_position += sensorValue[i] * weight[i];
+    sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i];
+    weighted   += sensorValue[i] * weight[i];
     sensor_sum += sensorValue[i];
   }
-  if (sensor_sum){
-    pos = (float) line_position / sensor_sum;
+
+  if (sensor_sum > 0) {
+    pos = weighted;// sensor_sum;
     lastKnownPos = pos;
+  } else {
+    pos = lastKnownPos;   // line lost, keep last known position
   }
 }
 
 void followLine(){
-    readSensor();
-    float error = 4.5 - pos; // center is 4.5
-    PID = Kp * error + Kd * (error - lastError);
-    lastError = error;
 
-    Serial.printf("Pos: %.2f | Error: %.2f | PID: %.2f | SensorSum: %d\n", pos, error, PID, sensor_sum);  
-
-    int leftSpeed  = round(constrain(baseSpeed - PID, -maxSpeed, maxSpeed));
-    int rightSpeed = round(constrain(baseSpeed + PID, -maxSpeed, maxSpeed));
-    driveMotors(leftSpeed, rightSpeed);
-
-    //left turn detec
-    if (sensorValue[0]==1 && sensorValue[8]==0) turn_value=1;
-    //right turn detec
-    if (sensorValue[0]==0 && sensorValue[8]==1) turn_value=2;
-
-    //actually turning left
-    if (turn_value==1){
-      delay(10);
-      driveMotors(-minTurnSpeed, minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
-    }
-
-    //actually turnnig right
-    else if (turn_value==2){
-      delay(10);
-      driveMotors(minTurnSpeed, -minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
-    }
-
-    //u turn go back to prev pos
-    else if (sensor_sum==0 && turn_value==0){
+  readSensor();
+  if(justStarted){
+    driveMotors(baseSpeed,baseSpeed);
+    delay(400);
+    justStarted = false;
+  }else{
+    if(sensor_sum>4 && !Ti1){ // detecting the first T
+      driveMotors(baseSpeed,baseSpeed);
+      digitalWrite(led, LOW);
       delay(50);
-      driveMotors(-minTurnSpeed, minTurnSpeed);
-      while (sensorValue[3]==0 && sensorValue[4]==0) readSensor();
-      turn_value=0;
-    }
+      Ti1 = true;
+    }else if(sensor_sum>4 && Ti1 && !CIRCLE){ // detecting the circle
+      driveMotors(-minTurnSpeed,minTurnSpeed);
+      digitalWrite(led, HIGH);
+      delay(400);
+      driveMotors(minTurnSpeed,minTurnSpeed);
+      delay(200);
+      CIRCLE = true;
+      driveMotors(0,0);
+      delay(1000);
+      CIRCLE = true;
+    }else{
+      drivePID();
+    } 
+  }
+}
 
-    if (sensor_sum==8){
-      delay(30); // inertia can keep you going it's a temporary blackout
-      readSensor();
-      if (sensor_sum==8){
-        driveMotors(0,0);
-        while (sensor_sum==8) readSensor();
-      }
-      // sth to add if necessary
-    }
+void drivePID(){
+  float error = pos;
+  float corr = Kp * error + Kd * (error - lastError);
+  lastError = error;
+  driveMotors(baseSpeed + corr, baseSpeed - corr);
 }
 
 void detectInvertedLine() {
@@ -190,14 +175,12 @@ void checkBlackoutEvents() {
   if (!isBlackout && inBlackout) {
     inBlackout = false;  // just exited, count this as one event
     blackoutEventCount++;
-    Serial.printf("Blackout event #%d\n", blackoutEventCount);
 
     if (blackoutEventCount <9) {
       return;  
 
     } else if (blackoutEventCount == 9) {
       driveMotors(0, 0);
-      Serial.println("Finished.");
       while (true) { delay(1000); }  // stop here permanently
     }
   }
@@ -210,25 +193,9 @@ void calibrateSensors() {
   long blackSum[8] = {0};
   long whiteSum[8] = {0};
 
+ 
   waitForButtonPress();
 
-  Serial.println("Sampling BLACK surface...");
-  blackMillis = millis(); 
-  while(millis()-blackMillis < 2000) {
-    BSAMPLES++;
-    digitalWrite(led, LOW);
-    delay(100);
-    digitalWrite(led, HIGH);
-    delay(100);
-    for (uint8_t i = 0; i < 8; i++) {
-      blackSum[i] += analogRead(sensorPins[i]);
-    }
-    delay(2);
-  }
-  Serial.println("Black sampling done.");
-  waitForButtonPress();
-
-  Serial.println("Sampling WHITE surface...");
   whiteMillis = millis();
   while(millis()-whiteMillis < 2000) {
     WSAMPLES++;
@@ -241,17 +208,28 @@ void calibrateSensors() {
     }
     delay(2);
   }
+
+   waitForButtonPress();
+
+  blackMillis = millis(); 
+  while(millis()-blackMillis < 2000) {
+    BSAMPLES++;
+    digitalWrite(led, LOW);
+    delay(100);
+    digitalWrite(led, HIGH);
+    delay(100);
+    for (uint8_t i = 0; i < 8; i++) {
+      blackSum[i] += analogRead(sensorPins[i]);
+    }
+    delay(2);
+  }
   
-  Serial.println("White sampling done.");
 
   for (uint8_t i = 0; i < 8; i++) {
     int avgBlack = blackSum[i] / BSAMPLES;
     int avgWhite = whiteSum[i] / WSAMPLES;
 
     sensorThreashold[i] = (avgBlack + avgWhite) / 2;
-
-    Serial.printf("Sensor %d | Black: %4d | White: %4d | Threshold: %4d\n", 
-                  i, avgBlack, avgWhite, sensorThreashold[i]);
   }
 }
 
