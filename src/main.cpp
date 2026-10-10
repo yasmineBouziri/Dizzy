@@ -143,14 +143,14 @@ void followLine(){
     }else if(sensor_sum>4 && Ti1 && !CIRCLE1){ // detecting the circle entrance
       driveMotors(-minTurnSpeed,minTurnSpeed);
       digitalWrite(led, HIGH);
-      delay(300);
+      delay(305);
       driveMotors(0,0);
       delay(1000);
       CIRCLE1 = true;
-    }else if(sensor_sum>4 && CIRCLE1 && !CIRCLE2){ 
+    }else if(sensor_sum>3 && CIRCLE1 && !CIRCLE2){ 
       digitalWrite(led, LOW);// detecting the circle exit
       driveMotors(-minTurnSpeed,minTurnSpeed);
-      delay(300);
+      delay(290);
       driveMotors(0,0);
       delay(1000);
       CIRCLE2 = true;
