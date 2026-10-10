@@ -17,7 +17,7 @@ const uint8_t PWMB = 22,  BIN1 = 19, BIN2 = 18;  // RIGHT motor
 // PID tuning
 
 int turn_value=0;
-float Kp =17;
+float Kp =25;
 float PID;
 float Kd = 0;//1;
 
@@ -51,19 +51,18 @@ bool Ti1 = false;
 bool CIRCLE1 = false;
 bool CIRCLE2 = false;
 bool Ti2 = false;
-bool TEAR = false;
-bool C1 = false;
-bool C2 = false;
+bool TEARenter = false;
+bool TEARleave = false;
 
 // Function Declarations
 void waitForButtonPress();
 void calibrateSensors();
 void followLine();
-void checkBlackoutEvents();
 void detectInvertedLine();
 void driveMotors(int leftSpeed, int rightSpeed);
 void readSensor();
 void drivePID();
+void stopMotors();
 
 void setup() {
   Serial.begin(115200);
@@ -79,7 +78,21 @@ void setup() {
   pinMode(startButtonPin, INPUT_PULLUP);
 
   digitalWrite(led, HIGH);
+  /*driveMotors(100,100);
+  delay(5000);
 
+  digitalWrite(led, LOW);
+  driveMotors(-100,-100);
+  delay(5000);
+
+  digitalWrite(led, HIGH);
+  driveMotors(100,0);
+  delay(5000);
+
+  digitalWrite(led, LOW);
+  driveMotors(0,100);
+  delay(5000);
+  stopMotors();*/
 
   calibrateSensors();
 
@@ -109,7 +122,7 @@ void waitForButtonPress() {
 void readSensor() {
   sensor_sum = 0;
   int weighted = 0;
-  const int weight[8] = {-4, -3, -2, -1, 1, 2, 3, 4};
+  const int weight[8] = {-5, -3, -2, -1, 1, 2, 3, 5};
 
   for (uint8_t i = 0; i < 8; i++) {
     sensorValue[i] = analogRead(sensorPins[i]) > sensorThreashold[i];
@@ -131,30 +144,44 @@ void followLine(){
   if(justStarted){
     driveMotors(baseSpeed,baseSpeed);
     delay(400);
-    driveMotors(0,0);
     justStarted = false;
   }else{
     if(sensor_sum>4 && !Ti1){ // detecting the first T
-      driveMotors(baseSpeed,baseSpeed);
       digitalWrite(led, LOW);
+      driveMotors(baseSpeed,baseSpeed);
       delay(150);
-      driveMotors(0,0);
       Ti1 = true;
     }else if(sensor_sum>4 && Ti1 && !CIRCLE1){ // detecting the circle entrance
-      driveMotors(-minTurnSpeed,minTurnSpeed);
       digitalWrite(led, HIGH);
+      driveMotors(-minTurnSpeed,minTurnSpeed);
       delay(305);
-      driveMotors(0,0);
-      delay(1000);
       CIRCLE1 = true;
     }else if(sensor_sum>3 && CIRCLE1 && !CIRCLE2){ 
       digitalWrite(led, LOW);// detecting the circle exit
+      driveMotors(minTurnSpeed, minTurnSpeed);
+      delay(150);
       driveMotors(-minTurnSpeed,minTurnSpeed);
       delay(290);
-      driveMotors(0,0);
-      delay(1000);
       CIRCLE2 = true;
-    }else{
+    }
+    else if (sensor_sum>4 && CIRCLE2 && !Ti2){ // detecting the second T
+      digitalWrite(led, HIGH);
+      drivePID();
+      Ti2 = true;
+    }
+    else if (sensor_sum>4 && Ti2 && !TEARenter){ // detecting the tear
+      digitalWrite(led, LOW);
+      Kp=17;
+      drivePID();
+      TEARenter = true;
+    }
+    else if (sensor_sum>4 && TEARenter && !TEARleave){ // detecting the tear leave
+      digitalWrite(led, HIGH);
+      Kp=25;
+      drivePID();
+      TEARleave = true;
+    }
+    else{
       drivePID();
     } 
   }
@@ -170,29 +197,6 @@ void drivePID(){
 void detectInvertedLine() {
   if (sensorValue[0] && sensorValue[1] && sensorValue[2] && !sensorValue[3] && !sensorValue[4] && sensorValue[5] && sensorValue[6] && sensorValue[7]) invertedLine = !invertedLine; 
 }
-
-// Detects entering/leaving a "wide black zone" (marker) and reacts based on which one this is in sequence.
-void checkBlackoutEvents() {
-  bool isBlackout = (sensor_sum == 8);  // 8 sensors see black = wide black zone
-
-  if (isBlackout && !inBlackout) {
-    inBlackout = true;  // just entered a wide black zone
-  }
-
-  if (!isBlackout && inBlackout) {
-    inBlackout = false;  // just exited, count this as one event
-    blackoutEventCount++;
-
-    if (blackoutEventCount <9) {
-      return;  
-
-    } else if (blackoutEventCount == 9) {
-      driveMotors(0, 0);
-      while (true) { delay(1000); }  // stop here permanently
-    }
-  }
-}
-
 
 void calibrateSensors() {
   int BSAMPLES = 0;
@@ -244,11 +248,8 @@ void calibrateSensors() {
 void driveMotors(int speedLeft, int speedRight) {
   bool forwardLeft = speedLeft >= 0;
   bool forwardRight = speedRight >= 0;
-  int pwmLeft = constrain(abs(speedLeft), 0, 255);
-  int pwmRight = constrain(abs(speedRight), 0, 255);
-
-  if (pwmLeft > 0 && pwmLeft < minTurnSpeed) pwmLeft = minTurnSpeed;
-  if (pwmRight > 0 && pwmRight < minTurnSpeed) pwmRight = minTurnSpeed;
+  int pwmLeft = constrain(abs(speedLeft), minTurnSpeed, 255);
+  int pwmRight = constrain(abs(speedRight), minTurnSpeed, 255);
 
   digitalWrite(AIN1, forwardLeft ? HIGH : LOW);
   digitalWrite(AIN2, forwardLeft ? LOW : HIGH);
@@ -257,6 +258,16 @@ void driveMotors(int speedLeft, int speedRight) {
   digitalWrite(BIN1, forwardRight ? HIGH : LOW);
   digitalWrite(BIN2, forwardRight ? LOW : HIGH);
   analogWrite(PWMB, pwmRight);
+}
+
+void stopMotors(){
+  digitalWrite(AIN1, LOW);
+  digitalWrite(AIN2, LOW);
+  analogWrite(PWMA, 0);
+
+  digitalWrite(BIN1,LOW);
+  digitalWrite(BIN2,LOW);
+  analogWrite(PWMB,0);
 }
 
 
